@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/tooltip"
 
 const initialState = {
-  watermarkText: '仅供验证使用',
+  watermarkText: '仅供 xxx 验证使用',
   tileWatermark: false,
   opacity: 50,
   size: 50,
