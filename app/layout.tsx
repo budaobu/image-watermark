@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Footer } from '@/components/Footer'
+import { Coffee } from 'lucide-react'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -40,9 +41,10 @@ export default function RootLayout({
                 </nav>
               </div>
               <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-                <Button asChild variant="ghost">
+                <Button asChild variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
                   <Link href="https://buymeacoffee.com/lizhaoshui" target="_blank" rel="noopener noreferrer">
-                    Donate
+                    <Coffee className="h-5 w-5" />
+                    <span className="sr-only">Buy me a coffee</span>
                   </Link>
                 </Button>
               </div>

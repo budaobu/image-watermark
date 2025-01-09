@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Coffee } from 'lucide-react'
 
 export function Footer() {
   const currentYear = new Date().getFullYear()
@@ -16,9 +17,10 @@ export function Footer() {
           </p>
         </div>
         <div className="flex flex-col items-center gap-4 md:flex-row md:gap-2">
-          <Button asChild variant="ghost">
+          <Button asChild variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
             <Link href="https://buymeacoffee.com/lizhaoshui" target="_blank" rel="noopener noreferrer">
-              Donate
+              <Coffee className="h-5 w-5" />
+              <span className="sr-only">Buy me a coffee</span>
             </Link>
           </Button>
           <p className="text-center text-sm leading-loose text-muted-foreground md:text-left">
