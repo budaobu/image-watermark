@@ -2,6 +2,7 @@ import '@/styles/globals.css'
 import { Inter } from 'next/font/google'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Footer } from '@/components/Footer'
 
@@ -21,11 +22,18 @@ export default function RootLayout({
         <div className="relative flex min-h-screen flex-col">
           <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="container flex h-14 items-center">
-              <div className="mr-4 hidden md:flex">
+              <div className="mr-4 flex items-center">
                 <Link href="/" className="mr-6 flex items-center space-x-2">
-                  <span className="hidden font-bold sm:inline-block">
-                    图片加水印
-                  </span>
+                  <div className="relative h-8 w-8 overflow-hidden rounded-full">
+                    <Image
+                      src="/logo.png?height=32&width=32"
+                      alt="图片加水印 Logo"
+                      width={32}
+                      height={32}
+                      className="object-cover"
+                    />
+                  </div>
+                
                 </Link>
                 <nav className="flex items-center space-x-6 text-sm font-medium">
                   <Link href="/">Home</Link>
@@ -48,6 +56,3 @@ export default function RootLayout({
   )
 }
 
-
-
-import './globals.css'
