@@ -4,15 +4,15 @@
     <div class="flex flex-col items-center justify-center text-center mb-12 relative">
       <!-- Dark Mode & GitHub Actions -->
       <div class="absolute right-0 top-0 flex items-center gap-2">
+         <a href="https://github.com/budaobu/image-watermark" target="_blank" class="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors">
+          <Icon name="simple-icons:github" class="w-6 h-6" />
+        </a>
          <Button 
           variant="ghost" 
           size="sm"
           :icon="isDark ? 'i-heroicons-moon' : 'i-heroicons-sun'"
           @click="toggleDark()"
         />
-        <a href="https://github.com/Start250/image-watermark" target="_blank" class="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors">
-          <Icon name="i-simple-icons-github" class="w-6 h-6" />
-        </a>
       </div>
 
       <div class="flex items-center gap-3 mb-2">
@@ -211,7 +211,7 @@
                 icon="i-heroicons-arrow-path"
                 label="更换图片"
                 variant="solid"
-                class="bg-white text-gray-900 hover:bg-gray-100 dark:bg-white dark:text-gray-900"
+                class="bg-white !text-gray-900 hover:bg-gray-100 dark:bg-white dark:!text-gray-900 shadow-lg"
                />
             </div>
           </div>
@@ -244,8 +244,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, nextTick } from 'vue'
-import { useTitle, useDark, useToggle } from '@vueuse/core'
+import { ref, reactive, nextTick } from 'vue'
+import { useTitle, useDark, useToggle, watchThrottled } from '@vueuse/core'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
 import Slider from './components/ui/Slider.vue'
@@ -264,9 +264,10 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const isDragging = ref(false)
 
-// Original Image Object
+// Image Objects
 const originalImage = ref<HTMLImageElement | null>(null)
-// Preview URL
+const previewImage = ref<HTMLImageElement | null>(null) // Downscaled for performance
+// Preview URL (Display)
 const previewUrl = ref('')
 
 // Config Interface
@@ -306,6 +307,34 @@ const triggerFileSelect = () => {
   fileInputRef.value?.click()
 }
 
+// 1. Create a downscaled preview image if original is too large
+const createPreviewImage = (original: HTMLImageElement): Promise<HTMLImageElement> => {
+    return new Promise((resolve) => {
+        const MAX_WIDTH = 1500
+        if (original.naturalWidth <= MAX_WIDTH) {
+            resolve(original)
+            return
+        }
+
+        const scale = MAX_WIDTH / original.naturalWidth
+        const canvas = document.createElement('canvas')
+        canvas.width = MAX_WIDTH
+        canvas.height = original.naturalHeight * scale
+        
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+             resolve(original)
+             return
+        }
+        
+        ctx.drawImage(original, 0, 0, canvas.width, canvas.height)
+        
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.src = canvas.toDataURL('image/jpeg', 0.8) // Use JPEG for smaller memory footprint in preview
+    })
+}
+
 const handleFiles = (fileList: FileList | null) => {
   if (!fileList || fileList.length === 0) return
   
@@ -318,11 +347,14 @@ const handleFiles = (fileList: FileList | null) => {
   const reader = new FileReader()
   reader.onload = (e) => {
     const img = new Image()
-    img.onload = () => {
+    img.onload = async () => {
       originalImage.value = img
+      // Create optimized preview version
+      previewImage.value = await createPreviewImage(img)
+      
       // Wait for DOM update
       nextTick(() => {
-        drawWatermark()
+        drawWatermark() // Draws using previewImage by default
       })
     }
     img.src = e.target?.result as string
@@ -342,121 +374,112 @@ const handleDrop = (e: DragEvent) => {
 }
 
 // Core: Draw Watermark
-let isDrawing = false
-let pendingDraw = false
+// Modified to support rendering to a specific canvas with a specific image
+// If no args provided, uses previewImage + on-screen canvas (Fast Mode)
+const drawWatermark = (targetImage?: HTMLImageElement, targetCanvas?: HTMLCanvasElement) => {
+  // Default to preview image for UI responsiveness
+  const img = targetImage || previewImage.value
+  const canvas = targetCanvas || canvasRef.value
+  
+  if (!img || !canvas) return
 
-const drawWatermark = () => {
-  // Simple frame skipping prevention
-  if (isDrawing) {
-    pendingDraw = true
-    return
+  // Use 'willReadFrequently' if we were reading back a lot, but here we mostly write.
+  const ctx = canvas.getContext('2d', { alpha: false }) 
+  if (!ctx) return
+  
+  if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
   }
-  
-  if (!originalImage.value || !canvasRef.value) return
 
-  isDrawing = true
-  
-  requestAnimationFrame(() => {
-    const canvas = canvasRef.value
-    if (!canvas) {
-        isDrawing = false
-        return
-    }
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-        isDrawing = false
-        return
-    }
+  // Clear previous content
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(img, 0, 0)
 
-    const img = originalImage.value
-    if (!img) {
-      isDrawing = false
-      return
-    }
+  ctx.save()
+
+  // Improved Font Sizing Logic
+  const baseFontSize = Math.max(20, img.naturalWidth / 25) 
+  const scaleFactor = 0.5 + (config.size / 100) * 2.5
+  const fontSize = baseFontSize * scaleFactor
+
+  ctx.font = `bold ${fontSize}px sans-serif`
+  ctx.fillStyle = config.color
+  ctx.globalAlpha = config.opacity / 100
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'center'
+
+  if (config.tiled) {
+    const angle = (config.rotate * Math.PI) / 180
     
-    // Check if we need to resize canvas (expensive operation)
-    if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-      canvas.width = img.naturalWidth
-      canvas.height = img.naturalHeight
-    }
+    ctx.translate(canvas.width / 2, canvas.height / 2)
+    ctx.rotate(angle)
 
-    ctx.drawImage(img, 0, 0)
+    const textMetrics = ctx.measureText(config.text)
+    const textWidth = textMetrics.width
+    
+    const gapX = textWidth + fontSize * (1 + (config.gap / 100) * 3)
+    const gapY = fontSize + fontSize * (2 + (config.gap / 100) * 3)
 
-    ctx.save()
+    const diag = Math.sqrt(Math.pow(canvas.width, 2) + Math.pow(canvas.height, 2))
+    const limit = diag / 2 + Math.max(gapX, gapY)
 
-    // Improved Font Sizing Logic
-    const baseFontSize = Math.max(20, img.naturalWidth / 25) 
-    const scaleFactor = 0.5 + (config.size / 100) * 2.5
-    const fontSize = baseFontSize * scaleFactor
-
-    ctx.font = `bold ${fontSize}px sans-serif`
-    ctx.fillStyle = config.color
-    ctx.globalAlpha = config.opacity / 100
-    ctx.textBaseline = 'middle'
-    ctx.textAlign = 'center'
-
-    if (config.tiled) {
-      const angle = (config.rotate * Math.PI) / 180
-      
-      ctx.translate(canvas.width / 2, canvas.height / 2)
-      ctx.rotate(angle)
-
-      const textMetrics = ctx.measureText(config.text)
-      const textWidth = textMetrics.width
-      
-      const gapX = textWidth + fontSize * (1 + (config.gap / 100) * 3)
-      const gapY = fontSize + fontSize * (2 + (config.gap / 100) * 3)
-
-      const diag = Math.sqrt(Math.pow(canvas.width, 2) + Math.pow(canvas.height, 2))
-      const limit = diag / 2 + Math.max(gapX, gapY)
-
-      for (let x = -limit; x < limit; x += gapX) {
-        for (let y = -limit; y < limit; y += gapY) {
-          const offsetX = (Math.floor(y / gapY) % 2 !== 0) ? gapX / 2 : 0
-          ctx.fillText(config.text, x + offsetX, y)
-        }
+    for (let x = -limit; x < limit; x += gapX) {
+      for (let y = -limit; y < limit; y += gapY) {
+        const offsetX = (Math.floor(y / gapY) % 2 !== 0) ? gapX / 2 : 0
+        ctx.fillText(config.text, x + offsetX, y)
       }
-    } else {
-      const posX = (img.naturalWidth * config.x) / 100
-      const posY = (img.naturalHeight * config.y) / 100
-
-      ctx.translate(posX, posY)
-      ctx.rotate((config.rotate * Math.PI) / 180)
-
-      ctx.fillText(config.text, 0, 0)
     }
+  } else {
+    const posX = (img.naturalWidth * config.x) / 100
+    const posY = (img.naturalHeight * config.y) / 100
 
-    ctx.restore()
+    ctx.translate(posX, posY)
+    ctx.rotate((config.rotate * Math.PI) / 180)
 
-    previewUrl.value = canvas.toDataURL('image/png')
-    
-    isDrawing = false
-    
-    // If a change happened while drawing, re-draw once more to capture final state
-    if (pendingDraw) {
-      pendingDraw = false
-      drawWatermark()
-    }
-  })
+    ctx.fillText(config.text, 0, 0)
+  }
+
+  ctx.restore()
+
+  // Only update preview URL if we are drawing to the visible canvas
+  if (!targetCanvas) {
+      previewUrl.value = canvas.toDataURL('image/png')
+  }
 }
 
 const downloadImage = () => {
-  if (!previewUrl.value) return
+  if (!originalImage.value) return
   
+  // Create a temporary canvas for high-res rendering
+  const tempCanvas = document.createElement('canvas')
+  
+  // Render using the ORIGINAL full-res image
+  drawWatermark(originalImage.value, tempCanvas)
+
+  // Download logic
   const link = document.createElement('a')
-  link.href = previewUrl.value
+  link.href = tempCanvas.toDataURL('image/png')
   link.download = `watermarked_${Date.now()}.png`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
+  
+  // Clean up
+  tempCanvas.remove()
 }
 
-// Watch config changes
-watch(config, () => {
-  if (originalImage.value) {
-    drawWatermark()
-  }
-})
+// Optimized Watcher via watchThrottled
+watchThrottled(
+  config,
+  () => {
+    // Only redraw if we have an image
+    if (previewImage.value) {
+      drawWatermark() // Uses preview image
+    }
+  },
+  { throttle: 50, leading: true, trailing: true }
+)
 </script>
 
 <style scoped>
